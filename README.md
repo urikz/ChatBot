@@ -40,6 +40,11 @@ Parsed file /home/urikz/data/personachat/train_none_original.txt in 10 seconds
 ```
 $ python ShaLab/engine.py -d <DATA_DIR> -o <MODEL_DIR> --gpu 0 --sort-batches --glove ~/word_vectors/glove.6B.300d.txt -lr 1.0 -emsz 300 -hsz 1024 -nlayers 1 -bs 128 --num-epochs 10 -dp 0.2
 ```
+One should get best validation perplexity on approximately 6 epoch ~ 34.5 ("tune" dataset). The corresponding test perplexity will be around 32.5.
+```
+----- Validation [tune] after epoch 6 (14592 samples, 12.00 avg source length, 13.11 avg target length) perplexity 34.383
+----- Validation [tune-test] after epoch 6 (13952 samples, 11.85 avg source length, 12.96 avg target length) perplexity 32.374
+```
 4. Run dialog model
 ```
 python ShaLab/dialog.py -d <DATA_DIR> --model <MODEL_DIR>/model.checkpoint.epoch-6.pth.tar --gpu 0 --beam-size 10
