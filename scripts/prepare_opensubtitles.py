@@ -14,8 +14,6 @@ import xml.etree.ElementTree as ET
 word_tokenizer = TreebankWordTokenizer()
 
 MAX_TIME_DIFFERENCE_S = 2
-MIN_WORD_LENGTH = 2
-MAX_WORD_LENGTH = 20
 
 # remove brackets
 CLEAN_BRACKETS_REGEX = re.compile(
@@ -60,6 +58,9 @@ CLEANUP_REPLACE_RULES = [
 ]
 
 
+TIMESTAMP_REGEX = re.compile('^(\d{2}):(\d{2}):(\d{2}),(\d{3})$')
+
+
 def get_dir_id(filename_path):
     dirpath, filename = os.path.split(filename_path)
     _, movie_id_str = os.path.split(dirpath)
@@ -82,15 +83,6 @@ def get_list_of_files(top_path, group_by_dir=False, extension='.xml.gz'):
                     result[movie_id] = []
                 result[movie_id].append(full_filename)
     return result
-
-
-def parse_xml(filepath):
-    extension = os.path.splitext(filepath)[1]
-    if extension == '.gz':
-        with gzip.open(filepath, 'r') as f:
-            return ET.parse(f)
-    else:
-        return ET.parse(filepath)
 
 
 def normalize_whitespaces(sentence):
@@ -133,7 +125,7 @@ def clean_text(words, lowercase, max_word_length, min_word_length):
 
     if (
         len(words) > 0
-        and any(map(lambda k: re.search(r'\w', k) is not None, words))
+        and any(map(lambda k: re.search(r'[a-zA-Z]', k) is not None, words))
         and len(words) >= min_word_length
         and len(words) <= max_word_length
     ):
@@ -143,20 +135,16 @@ def clean_text(words, lowercase, max_word_length, min_word_length):
 
 
 def parse_time_str(time_value_str):
-    if not(
-        time_value_str is not None
-        and len(time_value_str) == 12
-        and time_value_str[2] == ':'
-        and time_value_str[5] == ':'
-        and time_value_str[8] == ','
-    ):
-        return None
+    m = TIMESTAMP_REGEX.match(time_value_str)
     try:
-        return (
-            int(time_value_str[0:2]) * 3600 +
-            int(time_value_str[3:5]) * 60 +
-            int(time_value_str[6:8])
-        )
+        if m is not None:
+            return (
+                int(m.group(1)) * 3600 +
+                int(m.group(2)) * 60 +
+                int(m.group(3))
+            )
+        else:
+            return None
     except:
         return None
 
@@ -169,7 +157,7 @@ def extract_data_from_xml(
 ):
     max_time_difference = 1
     previous_end_time = -1000
-    previous_sentence = None
+    current_dialog = []
     for sentence_node in xml_object.getroot():
         if sentence_node.tag != 's':
             continue
@@ -206,25 +194,38 @@ def extract_data_from_xml(
             max_word_length,
             min_word_length,
         )
-        if sentence is None:
-            continue
 
         start_time = start_time or previous_end_time
         end_time = end_time or previous_end_time
         if (
-            previous_sentence is not None
+            sentence is not None
             and start_time - previous_end_time <= MAX_TIME_DIFFERENCE_S
         ):
-            yield (previous_sentence + '\t' + sentence)
-        previous_sentence = sentence
+            current_dialog.append(sentence)
+        else:
+            if len(current_dialog) > 1:
+                yield current_dialog
+            current_dialog = []
+            if sentence is not None:
+                current_dialog.append(sentence)
+
         previous_end_time = max(start_time, end_time)
+    if len(current_dialog) > 1:
+        yield current_dialog
 
 
 class DataProcessor(object):
-    def __init__(self, lowercase, max_word_length, min_word_length):
+    def __init__(
+        self,
+        lowercase,
+        max_word_length,
+        min_word_length,
+        keep_history,
+    ):
         self.lowercase = lowercase
         self.max_word_length = max_word_length
         self.min_word_length = min_word_length
+        self.keep_history = keep_history
 
     def __call__(self, movie_id_with_files):
         movie_id, files = movie_id_with_files
@@ -232,14 +233,23 @@ class DataProcessor(object):
         files_with_error = []
         for filepath in files:
             try:
-                xml_object = parse_xml(filepath)
-                for conversation in extract_data_from_xml(
+                with gzip.open(filepath, 'r') as f:
+                    xml_object = ET.parse(f)
+
+                for dialog in extract_data_from_xml(
                     xml_object=xml_object,
                     lowercase=self.lowercase,
                     max_word_length=self.max_word_length,
                     min_word_length=self.min_word_length,
                 ):
-                    data.add(conversation)
+                    assert len(dialog) > 1
+                    if self.keep_history:
+                        data.add('\t'.join(dialog))
+                    else:
+                        data.update([
+                            '%s\t%s' % (dialog[i], dialog[i + 1])
+                            for i in range(len(dialog) - 1)
+                        ])
             except ET.ParseError as e:
                 files_with_error.append((filepath, e))
             except:
@@ -288,6 +298,7 @@ def main(args):
         lowercase=args.lower,
         max_word_length=args.max_length,
         min_word_length=args.min_length,
+        keep_history=args.keep_history,
     )
 
     with multiprocessing.Pool(processes=args.num_workers) as pool:
@@ -318,10 +329,16 @@ if __name__ == '__main__':
         default=False,
         help='Deduplicate for subtitles for the same movie',
     )
+    parser.add_argument(
+        '--keep-history',
+        action='store_true',
+        default=False,
+        help='Keep dialogs history',
+    )
     parser.add_argument('--num-workers', type=int, default=1, help='Number of workers')
     parser.add_argument('--lower', action='store_true', default=False)
-    parser.add_argument('--max-length', type=int, default=MAX_WORD_LENGTH)
-    parser.add_argument('--min-length', type=int, default=MIN_WORD_LENGTH)
+    parser.add_argument('--max-length', type=int)
+    parser.add_argument('--min-length', type=int)
     args = parser.parse_args()
 
     if ',' in args.out:

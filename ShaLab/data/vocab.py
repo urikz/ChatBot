@@ -28,7 +28,7 @@ class Vocabulary(object):
 
     def add_word_safe(self, word, count=None):
         assert word not in self.word2idx, \
-            word + ' already exists in the vocaulary'
+            word + ' already exists in the vocabulary'
         return self.add_word(word, count)
 
     def add_word(self, word, count=None):
@@ -46,13 +46,18 @@ class Vocabulary(object):
     def numberize(self, sentence):
         if isinstance(sentence, str):
             sentence = sentence.split()
+        # TODO: use numpy arrays here
         return [self.get_word_id(word) for word in sentence]
 
     def numberize_corpus(self, corpus):
+        # TODO: use numpy arrays here
         return [self.numberize(sentence) for sentence in corpus]
 
     def denumberize(self, word_ids):
         return [self.idx2word[word_id] for word_id in word_ids]
+
+    def str(self, word_ids):
+        return ' '.join(self.denumberize(word_ids))
 
     def to_file(self, path):
         with codecs.open(path, 'w', 'utf-8') as f:

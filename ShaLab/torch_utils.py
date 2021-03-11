@@ -12,7 +12,7 @@ def clip_grad_norm(parameters, max_norm):
             param_norm = p.grad.data.norm()
         total_norm += param_norm ** 2
     total_norm = total_norm ** (1. / 2)
-    clip_coef = max_norm / (total_norm + 1e-6)
+    clip_coef = max_norm / (total_norm + 1e-6).item()
     if clip_coef < 1:
         for p in parameters:
             p.grad.data.mul_(clip_coef)

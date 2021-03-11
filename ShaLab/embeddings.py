@@ -72,7 +72,10 @@ def load_word2vec_embeddings(path, vocab, embedding_size, binary_format):
             embeddings[i] = embeddings_from_file[index_from_file]
             words_initialized += 1
     logging.info(
-        'Initialized embeddings for %d words (%f%% of the vocabulary) in %d seconds',
+        (
+            'Initialized embeddings for %d words '
+            '(%.2f%% of the vocabulary) in %d seconds'
+        ),
         words_initialized,
         100.0 * words_initialized / len(vocab),
         time.time() - start_time,
@@ -83,7 +86,13 @@ def load_word2vec_embeddings(path, vocab, embedding_size, binary_format):
 def load_glove_embeddings(path, vocab, embedding_size):
     start_time = time.time()
     embeddings_from_file = pandas.read_table(
-        path, sep=' ', index_col=0, header=None, quoting=csv.QUOTE_NONE, skiprows=0)
+        path,
+        sep=' ',
+        index_col=0,
+        header=None,
+        quoting=csv.QUOTE_NONE,
+        skiprows=0,
+    )
     assert embeddings_from_file.loc.obj.ndim == 2
     logging.info(
         'Loaded %d word embeddings of size %d from file %s in %d seconds',
@@ -99,17 +108,21 @@ def load_glove_embeddings(path, vocab, embedding_size):
         high=np.sqrt(3),
         size=(len(vocab), embedding_size),
     ).astype(np.float32)
+    glove_index = np.zeros(len(vocab), dtype=np.float32)
 
     words_initialized = 0
+
     for i, word in enumerate(vocab):
         assert i == vocab.get_word_id(word)
         if word in embeddings_from_file.index:
-            embeddings[i] = embeddings_from_file.loc[word].as_matrix()
+            embeddings[i] = embeddings_from_file.loc[word].values
+            glove_index[i] = embeddings_from_file.index.get_loc(word) + 1
             words_initialized += 1
+
     logging.info(
         'Initialized embeddings for %d words (%f%% of the vocabulary) in %d seconds',
         words_initialized,
         100.0 * words_initialized / len(vocab),
         time.time() - start_time,
     )
-    return embeddings
+    return embeddings, glove_index
